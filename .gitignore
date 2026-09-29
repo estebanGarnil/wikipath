@@ -1,0 +1,37 @@
+@'
+# Secrets et configuration locale
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Python / Django
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.sqlite3
+
+# Node / Vue
+node_modules/
+dist/
+.vite/
+
+# Journaux
+*.log
+
+# Système
+.DS_Store
+Thumbs.db
+'@ | Set-Content -Encoding utf8 .gitignore
+# État local du générateur
+.boilr/
+
+# Données importées dans Neo4j
+/database/neo4j/import/*
+!/database/neo4j/import/README.md
+!/database/neo4j/import/.gitkeep
