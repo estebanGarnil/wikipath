@@ -75,10 +75,7 @@ DATABASES = {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": os.getenv("DB_NAME", "wikipath"),
         "USER": os.getenv("DB_USER", "wikipath"),
-        "PASSWORD": os.getenv(
-            "DB_PASSWORD",
-            "wikipath-postgres-dev",
-        ),
+        "PASSWORD": os.getenv("DB_PASSWORD","wikipath-postgres-dev",),
         "HOST": os.getenv("DB_HOST", "db"),
         "PORT": os.getenv("DB_PORT", "5432"),
     }
