@@ -1,18 +1,7 @@
 
 Django>=5.0,<6.0
-
 gunicorn>=21.2.0
-
 python-dotenv>=1.0.0
-
-
-
-
 djangorestframework>=3.15.0
-
-
-
-
-
-
 psycopg[binary]
+neo4j>=5.26,<6
