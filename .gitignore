@@ -33,3 +33,5 @@ Thumbs.db
 /database/neo4j/import/*
 !/database/neo4j/import/README.md
 !/database/neo4j/import/.gitkeep
+
+/wikipath/
