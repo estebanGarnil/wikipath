@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     "apps.core",
     "rest_framework",
     "apps.articles.apps.ArticlesConfig",
+    "django.contrib.postgres",
     
 ]
 

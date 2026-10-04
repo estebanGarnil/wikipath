@@ -29,3 +29,15 @@ class ArticleSearchSerializer(serializers.Serializer):
         max_length=200,
         trim_whitespace=True,
     )
+
+class ArticleSuggestSerializer(serializers.Serializer):
+    q = serializers.CharField(
+        min_length=3,
+        max_length=200,
+        trim_whitespace=True,
+    )
+    limit = serializers.IntegerField(
+        min_value=1,
+        max_value=20,
+        default=10,
+    )
