@@ -15,6 +15,13 @@ venv/
 htmlcov/
 *.sqlite3
 
+.venv/*
+.venv-semantic/
+.venv/
+.venv-*/
+venv/
+env/
+
 # Node / Vue
 node_modules/
 dist/
@@ -35,3 +42,16 @@ Thumbs.db
 !/database/neo4j/import/.gitkeep
 
 /wikipath/
+
+/semantic-benchmark-results/
+/semantic-comparison/
+/semantic-context-input/
+/semantic-context-smoke/
+/semantic-results/
+/semantic-results-v2/
+/semantic-title-results/
+
+models/bge-reranker-v2-m3/
+
+/backend/semantic-benchmark.json.gz
+/backend/semantic-pilot.json.gz

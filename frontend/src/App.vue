@@ -1,13 +1,36 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import GraphView from './components/GraphView.vue'
+import ArticlePanel from './components/ArticlePanel.vue'
+import { graphVisibility } from './lib/graphVisibility.js'
+const readerLayout = ref({ open: false, height: 0 })
 const query = ref(''), suggestions = ref([]), searching = ref(false), searchError = ref('')
 const nodes = shallowRef([]), edges = shallowRef([]), selected = ref(null), history = ref([]), historyIndex = ref(-1)
 const busy = ref(false), graphError = ref(''), direction = ref('out'), progress = ref({}), graph = ref(null)
-const open = ref(false), content = ref(''), contentBusy = ref(false), contentError = ref('')
-let searchController, graphController, contentController, timer, searchVersion = 0, graphVersion = 0, contentVersion = 0
-const contentCache = new Map()
+let searchController, graphController, timer, searchVersion = 0, graphVersion = 0
 const pageProgress = computed(() => selected.value ? progress.value[`${selected.value.page_id}:${direction.value}`] : null)
+const visibleGraph = computed(() => graphVisibility(nodes.value, edges.value, selected.value?.page_id, direction.value))
+function navigateGraph(page) {
+  if (visibleGraph.value.navigable.has(page.page_id)) selectPage(page)
+}
+function followArticle(data) {
+  // Ignore any answer for a page the user has already left.
+  if (!selected.value || data.source_id !== selected.value.page_id) return
+  const page = data.node, edge = data.edge
+  if (edge.source !== data.source_id || edge.target !== page.page_id || edge.type !== 'LINKS_TO') return
+  if (!nodes.value.some(n => n.page_id === page.page_id)) {
+    if (nodes.value.length >= 400) {
+      graphError.value = 'Limite de 400 pages conservées atteinte. Démarrez une nouvelle exploration.'
+      return
+    }
+    nodes.value = [...nodes.value, page]
+  }
+  if (!edges.value.some(e => e.source === edge.source && e.target === edge.target && e.type === edge.type)) {
+    edges.value = [...edges.value, edge]
+  }
+  // Verified outgoing link: independent of the graph's in/out display filter.
+  selectPage(page)
+}
 async function json(url, signal) {
   const response = await fetch(url, { signal, headers: { Accept: 'application/json' } })
   if (!response.ok) throw new Error(response.status === 404 ? 'Cette page est absente de la base demandée.' : `La requête a échoué (${response.status}). Réessayez.`)
@@ -41,11 +64,11 @@ async function loadNeighbors(page = selected.value, dir = direction.value) {
     if (version !== graphVersion) return
     const mergedNodes = new Map(nodes.value.map(n => [n.page_id,n]))
     data.nodes.forEach(n => mergedNodes.set(n.page_id,n))
-    if (mergedNodes.size > 400) throw new Error('Limite de 400 pages affichées atteinte. Lancez une nouvelle exploration depuis la recherche.')
+    if (mergedNodes.size > 400) throw new Error('Limite de 400 pages conservées pour cette exploration atteinte. Lancez une nouvelle exploration depuis la recherche.')
     const mergedEdges = new Map(edges.value.map(e => [`${e.source}:${e.target}:${e.type}`,e]))
     data.edges.forEach(e => mergedEdges.set(`${e.source}:${e.target}:${e.type}`,e))
     nodes.value = [...mergedNodes.values()]; edges.value = [...mergedEdges.values()]
-    progress.value = { ...progress.value, [key]: { has_more: data.has_more, next_cursor: data.next_cursor } }
+    progress.value = { ...progress.value, [key]: { has_more: data.has_more, next_cursor: data.next_cursor, total_neighbors: data.total_neighbors } }
   } catch (error) { if (version === graphVersion && error.name !== 'AbortError') graphError.value = error.message }
   finally { if (version === graphVersion) busy.value = false }
 }
@@ -60,38 +83,21 @@ function selectPage(page, index = null) {
   if (!progress.value[`${page.page_id}:${direction.value}`]) loadNeighbors(selected.value)
 }
 function start(page) {
-  nodes.value = []; edges.value = []; progress.value = {}; history.value = []; historyIndex.value = -1
-  query.value = ''; suggestions.value = []; open.value = false
+  nodes.value = [{ ...page }]; edges.value = []; progress.value = {}; history.value = []; historyIndex.value = -1
+  query.value = ''; suggestions.value = []
   selectPage(page)
 }
 watch(direction, () => {
   graphController?.abort(); ++graphVersion; busy.value = false; graphError.value = ''
   if (selected.value && !pageProgress.value) loadNeighbors()
 })
-async function loadContent() {
-  contentController?.abort(); const version = ++contentVersion
-  content.value = ''; contentError.value = ''; contentBusy.value = false
-  if (!open.value || !selected.value) return
-  const id = selected.value.page_id
-  if (contentCache.has(id)) { content.value = contentCache.get(id); return }
-  contentBusy.value = true; contentController = new AbortController()
-  try {
-    const data = await json(`/api/articles/${id}/content/`,contentController.signal)
-    if (version !== contentVersion) return
-    content.value = data.wikitext
-    if (contentCache.size >= 5) contentCache.delete(contentCache.keys().next().value)
-    contentCache.set(id,data.wikitext)
-  } catch (error) { if (version === contentVersion && error.name !== 'AbortError') contentError.value = error.message }
-  finally { if (version === contentVersion) contentBusy.value = false }
-}
-watch([open, () => selected.value?.page_id], loadContent)
-onBeforeUnmount(() => { clearTimeout(timer); searchController?.abort(); graphController?.abort(); contentController?.abort() })
+onBeforeUnmount(() => { clearTimeout(timer); searchController?.abort(); graphController?.abort() })
 </script>
 
 <template>
   <main class="app-shell">
     <header class="topbar">
-      <a class="wordmark" href="/" aria-label="Wikipath, accueil">Wiki<span>path</span><small>EXPLORER LES CONNEXIONS</small></a>
+      <a class="wordmark" href="/" aria-label="Wikipath, accueil">Wiki<span>path</span></a>
       <div class="search">
         <label class="sr-only" for="search">Rechercher une page Wikipédia</label>
         <div class="search-field"><span aria-hidden="true">⌕</span><input id="search" v-model="query" type="search" autocomplete="off" placeholder="Rechercher une page Wikipédia…" @keydown.esc="query = ''" /></div>
@@ -109,17 +115,15 @@ onBeforeUnmount(() => { clearTimeout(timer); searchController?.abort(); graphCon
       </aside>
       <section class="explorer" aria-label="Exploration du graphe">
         <div class="graph-area">
-          <GraphView ref="graph" :nodes="nodes" :edges="edges" :selected="selected?.page_id" @select="selectPage" />
-          <div v-if="!selected" class="welcome"><p class="eyebrow">UNE PAGE EN OUVRE UNE AUTRE</p><h1>Suivez le fil<br />de votre curiosité.</h1><p>Recherchez un article, puis explorez les pages qui lui sont reliées.</p><button @click="start({page_id:3,title:'Antoine Meillet'})">Commencer une exploration <span aria-hidden="true">↗</span></button></div>
-          <div v-if="selected" class="graph-toolbar"><label>Liens <select v-model="direction"><option value="out">sortants</option><option value="in">entrants</option></select></label><button :disabled="busy || pageProgress?.has_more === false" @click="loadNeighbors()">{{ busy ? 'Chargement…' : pageProgress?.has_more === false ? 'Tous les voisins chargés' : pageProgress ? 'Charger 20 de plus' : 'Charger les voisins' }}</button><button @click="graph?.fit()">Recentrer</button></div>
+          <GraphView ref="graph" :nodes="visibleGraph.nodes" :edges="visibleGraph.edges" :selected="selected?.page_id" @select="navigateGraph" />
+          <div v-if="!selected" class="welcome"><h1>Suivez le fil<br />de votre curiosité.</h1><p>Recherchez un article, puis explorez les pages qui lui sont reliées.</p><button @click="start({page_id:3,title:'Antoine Meillet'})">Commencer une exploration <span aria-hidden="true">↗</span></button></div>
+          <div v-if="selected" class="graph-toolbar"><span class="neighbor-counter" role="status" aria-live="polite" title="Voisins directs présents dans le graphe / total disponible pour cette direction">{{ visibleGraph.navigable.size.toLocaleString('fr-FR') }} / {{ pageProgress?.total_neighbors == null ? '…' : pageProgress.total_neighbors.toLocaleString('fr-FR') }} voisins</span><button :disabled="busy || pageProgress?.has_more === false" @click="loadNeighbors()">{{ busy ? 'Chargement…' : pageProgress?.has_more === false ? 'Tous les voisins chargés' : pageProgress ? 'Charger 20 de plus' : 'Charger les voisins' }}</button><button @click="graph?.fit()">Recentrer</button></div>
           <div v-if="graphError" class="graph-error" role="alert">{{ graphError }} <button @click="loadNeighbors()">Réessayer</button></div>
-          <div v-if="selected" class="graph-caption"><span>{{ nodes.length }} pages · {{ edges.length }} liens</span><span>Glissez un nœud · Cliquez pour explorer · Zoomez à la molette</span></div>
+          <div v-if="selected" class="graph-caption"><span>{{ visibleGraph.nodes.length }} pages visibles · {{ visibleGraph.edges.length }} liens</span><span>Glissez un nœud · Explorez les voisins directs · Zoomez à la molette</span></div>
         </div>
-        <section v-if="selected" class="article-panel" :class="{ expanded: open }">
-          <button class="article-toggle" :aria-expanded="open" aria-controls="article-content" @click="open = !open"><span class="toggle-arrow" aria-hidden="true">{{ open ? '↓' : '↑' }}</span><h2>{{ selected.title }}</h2><span class="read-label">{{ open ? 'Réduire' : 'Lire le wikicode' }}</span></button>
-          <div v-if="open" id="article-content" class="article-body"><p v-if="contentBusy" role="status">Chargement du wikicode…</p><p v-else-if="contentError" role="alert">{{ contentError }} <button @click="loadContent">Réessayer</button></p><template v-else><p class="muted">Wikicode original · contenu non mis en forme</p><pre>{{ content }}</pre></template></div>
-        </section>
+        <div v-if="selected" class="reader-space" :style="{height: readerLayout.height + 'px'}" aria-hidden="true"></div>
       </section>
+      <ArticlePanel v-if="selected" :page="selected" @follow="followArticle" @layout="readerLayout = $event" />
     </div>
   </main>
 </template>

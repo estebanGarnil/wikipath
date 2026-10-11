@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "apps.articles.apps.ArticlesConfig",
     "django.contrib.postgres",
+    "apps.reader.apps.ReaderConfig",
     
 ]
 
