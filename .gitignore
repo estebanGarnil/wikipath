@@ -68,3 +68,5 @@ models/bge-reranker-v2-m3/
 # Notices locales des correctifs
 /INSTALLATION.md
 /INSTALLATION-ACCUEIL.txt
+/semantic-full-output/
+/input/

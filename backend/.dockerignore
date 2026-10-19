@@ -1,0 +1,11 @@
+﻿__pycache__/
+*.py[cod]
+.venv/
+.venv-*/
+.pytest_cache/
+.env
+.env.*
+semantic-full-input/
+semantic-import-input/
+semantic-benchmark.json.gz
+semantic-pilot.json.gz
