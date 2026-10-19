@@ -129,46 +129,54 @@ class ExplorationVisitsView(GraphAPIView):
         params = serializer.validated_data
 
         # Vérifier le propriétaire avant de consulter Neo4j.
-        get_object_or_404(
+        exploration = get_object_or_404(
             Exploration,
             pk=exploration_id,
             user=request.user,
         )
 
-        # Réessai d'une visite déjà enregistrée.
-        existing = ExplorationVisit.objects.filter(
-            exploration_id=exploration_id,
+        existing = exploration.visits.filter(
             position=params["position"],
         ).first()
 
         if existing is not None:
-            return self.existing_response(existing, params["page_id"])
+            return self.existing_response(existing, params)
+
+        # Un parent doit appartenir au parcours demandé.
+        if "parent_id" in params:
+            get_object_or_404(
+                exploration.visits,
+                pk=params["parent_id"],
+            )
 
         page = self.get_page_or_404(params["page_id"])
 
         with transaction.atomic():
-            # Sérialiser les ajouts concurrents sur ce parcours.
+            # Sérialiser les ajouts concurrents.
             exploration = get_object_or_404(
                 Exploration.objects.select_for_update(),
                 pk=exploration_id,
                 user=request.user,
             )
 
-            # Une autre requête a pu enregistrer la visite entre-temps.
             existing = exploration.visits.filter(
                 position=params["position"],
             ).first()
 
             if existing is not None:
-                return self.existing_response(
-                    existing,
-                    params["page_id"],
+                return self.existing_response(existing, params)
+
+            last_visit = (
+                exploration.visits.order_by("-position").first()
+            )
+
+            if last_visit is None:
+                return Response(
+                    {"detail": "Ce parcours ne possède pas de visite initiale."},
+                    status=409,
                 )
 
-            last_visit = exploration.visits.order_by("-position").first()
-            next_position = (
-                last_visit.position + 1 if last_visit is not None else 1
-            )
+            next_position = last_visit.position + 1
 
             if params["position"] != next_position:
                 return Response(
@@ -182,8 +190,18 @@ class ExplorationVisitsView(GraphAPIView):
                     status=409,
                 )
 
+            if "parent_id" in params:
+                parent = get_object_or_404(
+                    exploration.visits,
+                    pk=params["parent_id"],
+                )
+            else:
+                # Compatibilité avec le frontend actuel.
+                parent = last_visit
+
             visit = ExplorationVisit.objects.create(
                 exploration=exploration,
+                parent=parent,
                 position=next_position,
                 page_id=page["page_id"],
                 page_title=page["title"],
@@ -197,13 +215,19 @@ class ExplorationVisitsView(GraphAPIView):
         )
 
     @staticmethod
-    def existing_response(visit, page_id):
-        if visit.page_id != page_id:
+    def existing_response(visit, params):
+        same_page = visit.page_id == params["page_id"]
+        same_parent = (
+            "parent_id" not in params
+            or visit.parent_id == params["parent_id"]
+        )
+
+        if not same_page or not same_parent:
             return Response(
                 {
                     "detail": (
-                        "Cette position appartient déjà à une autre visite. "
-                        "Rechargez le parcours."
+                        "Cette position appartient déjà à une autre "
+                        "visite ou branche. Rechargez le parcours."
                     ),
                 },
                 status=409,

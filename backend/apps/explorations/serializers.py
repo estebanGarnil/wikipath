@@ -31,14 +31,25 @@ class ExplorationVisitCreateSerializer(serializers.Serializer):
         min_value=2,
         max_value=2147483647,
     )
+    parent_id = serializers.IntegerField(
+        min_value=1,
+        max_value=9223372036854775807,
+        required=False,
+    )
 
 
 class ExplorationVisitSerializer(serializers.ModelSerializer):
+    parent_id = serializers.IntegerField(
+        read_only=True,
+        allow_null=True,
+    )
+
     class Meta:
         model = ExplorationVisit
         fields = [
             "id",
             "position",
+            "parent_id",
             "page_id",
             "page_title",
             "visited_at",

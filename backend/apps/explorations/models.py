@@ -46,6 +46,13 @@ class ExplorationVisit(models.Model):
     page_id = models.PositiveBigIntegerField()
     page_title = models.TextField()
     visited_at = models.DateTimeField(auto_now_add=True)
+    parent = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="children",
+    )
 
     class Meta:
         ordering = ["position"]
