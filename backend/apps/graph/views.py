@@ -58,13 +58,13 @@ class GraphNeighborsView(GraphAPIView):
                 source, target = page_id, neighbor_id
             else:
                 source, target = neighbor_id, page_id
-            edges.append({"source": source, "target": target, "type": "LINKS_TO"})
+            edge = {"source": source, "target": target, "type": "LINKS_TO"}
+            if result["scores"][neighbor_id] is not None:
+                edge["semantic_score"] = result["scores"][neighbor_id]
+            edges.append(edge)
         return Response({
-            "center_id": page_id,
-            "direction": params["direction"],
-            "nodes": list(nodes_by_id.values()),
-            "edges": edges,
-            "has_more": result["has_more"],
-            "next_cursor": result["next_cursor"],
-            "total_neighbors": result["total_neighbors"],
+            "center_id": page_id, "direction": params["direction"],
+            "nodes": list(nodes_by_id.values()), "edges": edges,
+            "has_more": result["has_more"], "next_cursor": result["next_cursor"],
+            "total_neighbors": result["total_neighbors"], "order": result["order"],
         })

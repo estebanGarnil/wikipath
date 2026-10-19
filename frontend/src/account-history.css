@@ -1,0 +1,54 @@
+/* Compléments : conserve style.css et les composants du graphe/lecteur. */
+.account-actions{margin-left:auto;display:flex;align-items:center;gap:10px;flex-shrink:0;font-size:12px}.account-actions button{white-space:nowrap}.account-name{max-width:110px;overflow:hidden;text-overflow:ellipsis}.topbar{gap:22px}.topbar .search{min-width:120px}.app-notice{padding:10px 32px;border-bottom:1px solid #a2a9b1;font-size:13px;line-height:1.6;background:#fafafa;white-space:pre-line}.app-notice button{margin-left:8px;font-size:12px;padding:5px 8px}.journey-save-state{font-size:11px;color:#54595d;line-height:1.5;margin:0 0 24px}.suggestions p{padding:8px 16px;font-size:14px}.welcome button{margin-top:20px;border-color:#202122}
+.saved-history{flex:1;min-height:0;overflow:auto;padding:36px max(32px,calc((100vw - 1100px)/2)) 60px}.history-heading{display:flex;align-items:center;justify-content:space-between;gap:24px;margin-bottom:24px}.history-heading h1{font:normal clamp(28px,3vw,40px) Georgia,serif;margin:8px 0}.history-eyebrow{font-size:10px;letter-spacing:2px;color:#72777d}.journey-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:20px;margin:24px 0}.journey-card{text-align:left;display:flex;flex-direction:column;gap:16px;padding:24px;border:1px solid #a2a9b1;min-height:180px}.journey-card:hover{border-color:#202122}.journey-card-title{font:normal 24px Georgia,serif;overflow-wrap:anywhere}.journey-card time{font-size:12px;color:#54595d}.journey-card-link{margin-top:auto;font-size:12px}.journey-detail{max-width:850px;margin-top:28px}.journey-detail h2{font:normal 30px Georgia,serif;margin-bottom:8px}.saved-visits{list-style:none;padding:0;margin:30px 0}.saved-visits li{display:flex;gap:16px;align-items:baseline;padding:15px 0;border-bottom:1px solid #eaecf0}.saved-visits li>span:nth-child(2){overflow-wrap:anywhere;min-width:0}.saved-visits time{margin-left:auto;flex-shrink:0;color:#72777d;font-size:11px}.visit-number{font-size:12px;color:#54595d;min-width:28px}.resume-box{margin-top:28px;padding-top:20px;border-top:1px solid #202122}.resume-box p{line-height:1.6}.resume-box button{background:#202122;color:white}.account-dialog{width:min(440px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:28px;border:1px solid #202122;background:white;color:#202122;overflow:auto}.account-dialog::backdrop{background:#0006}.account-dialog-heading{display:flex;justify-content:space-between;gap:16px;align-items:center}.account-dialog h2{font:normal 28px Georgia,serif;margin:0}.account-dialog-heading button{font-size:24px;border:0;padding:4px 10px}.account-dialog fieldset{border:0;padding:0;margin:24px 0 0;min-width:0}.account-dialog label{display:block;margin:18px 0 8px;font-size:13px}.account-dialog input{width:100%;min-height:44px;padding:10px;border:1px solid #72777d;border-radius:0;background:white;color:#202122}.auth-error{white-space:pre-line;border-left:3px solid #202122;padding-left:12px;font-size:13px;line-height:1.5}.account-submit,.account-switch{width:100%;margin-top:20px}.account-submit{background:#202122;color:white;border-color:#202122}.account-submit:hover{background:#404244}.account-switch{border:0;text-decoration:underline;font-size:12px;margin-top:8px}
+@media(max-width:1050px){.topbar{height:auto;min-height:110px;padding-block:14px;flex-wrap:wrap;gap:12px}.topbar .search{order:3;flex-basis:100%;max-width:none}.account-actions{gap:6px}.account-actions button{padding:7px 9px}}@media(max-width:600px){.account-name{display:none}.account-actions{font-size:11px}.saved-history{padding:24px 16px}.history-heading{align-items:flex-start;flex-direction:column;gap:8px}.saved-visits li{flex-wrap:wrap;gap:8px}.saved-visits time{width:100%;margin-left:36px}.app-notice{padding:10px 16px}.account-dialog{padding:20px}.journey-cards{grid-template-columns:1fr}}
+
+/* Mobile : parcours horizontal, graphe central et commandes tactiles. */
+@media(max-width:650px){
+  .app-shell{min-height:0;height:100dvh}
+  .topbar{margin-inline:12px;padding-block:10px;min-height:0;gap:10px}
+  .topbar .wordmark{font-size:24px;min-width:0}
+  .account-actions{gap:4px;min-width:0}
+  .account-actions button{min-height:44px;padding:8px;font-size:11px}
+  .search-field{height:44px}
+  .search input{font-size:16px}
+  .workspace{flex-direction:column;padding:10px 12px 0;gap:10px;min-height:0}
+  .workspace .journey{width:100%;padding:0;flex-shrink:0;overflow:visible}
+  .journey h2,.journey-save-state,.journey>.muted{display:none}
+  .journey ol,.journey ol:has(li:only-child){display:flex;gap:0;overflow-x:auto;overscroll-behavior-x:contain;padding:3px 2px 7px;margin:0;max-width:100%}
+  .journey li,.journey li:only-child{flex:0 0 auto;min-height:0;padding:0;border:0;display:flex;align-items:center}
+  .journey li+li::before{content:'›';padding:0 8px;color:#72777d}
+  .journey button{left:0;width:auto;min-height:44px;max-width:180px;align-items:center;gap:7px;padding:8px 10px;border:1px solid #c8ccd1;font-size:12px;line-height:1.3}
+  .journey button>span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .journey .active button{border-color:#202122;background:#f5f5f5}
+  .journey .history-dot{width:9px;height:9px;margin:0}
+  .explorer{min-height:0;width:100%}
+  .graph-area{min-height:100px}
+  .graph-toolbar{gap:6px;font-size:11px}
+  .graph-toolbar button{min-height:44px;padding:8px 10px}
+  .neighbor-counter{font-size:11px}
+  .graph-caption{bottom:8px;font-size:9px}
+  .graph-caption span:last-child{display:none}
+  .graph-error{top:100px;max-height:50%;overflow:auto}
+  .workspace>.reader-panel,.reader-panel.expanded{left:12px;right:12px}
+  .reader-panel.expanded{max-height:90%;min-height:140px}
+  .reader-panel .article-toggle{padding:12px;min-height:48px}
+  .reader-title{font-size:20px}
+  .panel-resizer{height:24px}
+  .reader-tools{flex-wrap:wrap;gap:8px}
+  .reader-tools button{min-height:40px;padding:8px 10px}
+  .reader-body{font-size:15px}
+  .welcome{top:12%;left:4%;max-width:360px}
+  .welcome h1{font-size:32px;margin:12px 0}
+  .welcome>p:not(.eyebrow){font-size:13px;line-height:1.5}
+  .welcome button{min-height:44px;margin-top:8px}
+  .app-notice{font-size:12px;padding:8px 12px;max-height:25dvh;overflow:auto;flex-shrink:0}
+  .saved-history{padding:20px 16px 40px}
+  .history-heading h1{font-size:30px}
+  .account-dialog input{font-size:16px}
+}
+@media(max-width:380px){
+  .topbar .wordmark{font-size:21px}
+  .account-actions button{font-size:10px;padding-inline:6px}
+  .graph-toolbar button{font-size:10px;padding-inline:7px}
+}

@@ -8,3 +8,4 @@ neo4j>=5.26,<6
 requests>=2.32.3,<3
 nh3>=0.3,<0.4
 beautifulsoup4>=4.12,<5
+numpy>=1.26,<3

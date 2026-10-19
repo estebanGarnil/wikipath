@@ -1,0 +1,4 @@
+# Install CUDA-enabled torch first using the official PyTorch installer.
+numpy>=1.26,<3
+sentence-transformers>=4.1,<6
+mwparserfromhell>=0.7,<0.8

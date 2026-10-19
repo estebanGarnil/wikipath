@@ -55,3 +55,16 @@ models/bge-reranker-v2-m3/
 
 /backend/semantic-benchmark.json.gz
 /backend/semantic-pilot.json.gz
+/backend/semantic-import-input/
+
+/backend/semantic-import-input/
+
+# Données locales du traitement sémantique
+/backend/semantic-full-input/
+
+# Archive de travail extraite
+/semantic-full-review/
+
+# Notices locales des correctifs
+/INSTALLATION.md
+/INSTALLATION-ACCUEIL.txt
