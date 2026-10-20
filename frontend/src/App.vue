@@ -1,8 +1,9 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import GraphView from './components/GraphView.vue'
+import JourneyTree from './components/JourneyTree.vue'
 import ArticlePanel from './components/ArticlePanel.vue'
-import { graphVisibility } from './lib/graphVisibility.js'
+import { ancestorPath, branchGraph } from './lib/branchGraph.js'
 import { api, paginationPath } from './lib/api.js'
 
 const journeyList = ref(null)
@@ -72,7 +73,16 @@ async function loadRecentJourney() {
 }
 const readerLayout = ref({ open: false, height: 0 })
 const query = ref(''), suggestions = ref([]), searching = ref(false), searchError = ref('')
-const nodes = shallowRef([]), edges = shallowRef([]), selected = ref(null), history = ref([]), historyIndex = ref(-1)
+const selected = ref(null), allVisits = ref([]), currentVisitId = ref(null)
+const neighborhoods = shallowRef({})
+let localVisitId = 0
+const history = computed(() => ancestorPath(allVisits.value, currentVisitId.value))
+const historyIndex = computed(() => history.value.length - 1)
+const journeyDialog = ref(null)
+function chooseTreeVisit(visit) {
+  activateVisit(visit)
+  journeyDialog.value?.close()
+}
 const busy = ref(false), graphError = ref(''), direction = ref('out'), progress = ref({}), graph = ref(null)
 const user = ref(null), sessionReady = ref(false), accountError = ref(''), authBusy = ref(false)
 const authDialog = ref(null), authMode = ref('login'), username = ref(''), password = ref(''), confirmation = ref(''), authError = ref('')
@@ -83,7 +93,7 @@ const detail = ref(null), visits = ref([]), visitsNext = ref(null)
 let searchController, graphController, timer, searchVersion = 0, graphVersion = 0, historyVersion = 0
 const blocked = computed(() => saving.value || authBusy.value || !sessionReady.value)
 const pageProgress = computed(() => selected.value ? progress.value[`${selected.value.page_id}:${direction.value}`] : null)
-const visibleGraph = computed(() => graphVisibility(nodes.value, edges.value, selected.value?.page_id, direction.value))
+const visibleGraph = computed(() => branchGraph(history.value, neighborhoods.value, direction.value))
 const date = value => new Date(value).toLocaleString('fr-FR', {dateStyle:'medium', timeStyle:'short'})
 
 async function loadSession() {
@@ -139,7 +149,7 @@ function goHome() {
 }
 function resetGraph() {
   graphController?.abort(); ++graphVersion; busy.value = false; graphError.value = ''
-  nodes.value = []; edges.value = []; selected.value = null; progress.value = {}; history.value = []; historyIndex.value = -1
+  selected.value = null; progress.value = {}; allVisits.value = []; currentVisitId.value = null; neighborhoods.value = {}
   readerLayout.value = {open:false,height:0}
 }
 watch(query, value => {
@@ -154,30 +164,60 @@ watch(query, value => {
     finally { if (version === searchVersion) searching.value = false }
   }, 300)
 })
+function cacheNeighborhood(key, entry) {
+  const cache = {...neighborhoods.value}
+  delete cache[key]; cache[key] = entry
+  const protectedKeys = new Set(history.value.slice(-4).map(v => `${v.page_id}:${direction.value}`))
+  for (const old of Object.keys(cache)) {
+    if (Object.keys(cache).length <= 40) break
+    if (!protectedKeys.has(old)) {
+      delete cache[old]
+      const remaining = {...progress.value}; delete remaining[old]; progress.value = remaining
+    }
+  }
+  neighborhoods.value = cache
+}
 async function loadNeighbors(page = selected.value, dir = direction.value) {
   if (!page) return
   const key = `${page.page_id}:${dir}`, previous = progress.value[key]
-  if (previous && !previous.has_more) return
+  if (previous && (!previous.has_more || previous.capped)) return
   graphController?.abort(); graphController = new AbortController(); const version = ++graphVersion
   busy.value = true; graphError.value = ''
   try {
     const after = previous?.next_cursor ?? 0
     const data = await api(`/api/graph/pages/${page.page_id}/neighbors/?direction=${dir}&limit=20&after=${encodeURIComponent(after)}`, {signal:graphController.signal})
     if (version !== graphVersion) return
-    const mergedNodes = new Map(nodes.value.map(n => [n.page_id,n])); data.nodes.forEach(n => mergedNodes.set(n.page_id,n))
-    if (mergedNodes.size > 400) throw new Error('Limite de 400 pages conservées atteinte. Démarrez une nouvelle exploration.')
-    const mergedEdges = new Map(edges.value.map(e => [`${e.source}:${e.target}:${e.type}`,e])); data.edges.forEach(e => mergedEdges.set(`${e.source}:${e.target}:${e.type}`,e))
-    nodes.value = [...mergedNodes.values()]; edges.value = [...mergedEdges.values()]
-    progress.value = {...progress.value,[key]:{has_more:data.has_more,next_cursor:data.next_cursor,total_neighbors:data.total_neighbors}}
+    const old = neighborhoods.value[key] || {nodes:[],edges:[]}
+    const mergedNodes = new Map(old.nodes.map(n => [n.page_id,n])); data.nodes.forEach(n => mergedNodes.set(n.page_id,n))
+    const mergedEdges = new Map(old.edges.map(e => [`${e.source}:${e.target}:${e.type}`,e])); data.edges.forEach(e => mergedEdges.set(`${e.source}:${e.target}:${e.type}`,e))
+    cacheNeighborhood(key, {nodes:[...mergedNodes.values()], edges:[...mergedEdges.values()]})
+    progress.value = {...progress.value,[key]:{has_more:data.has_more,next_cursor:data.next_cursor,total_neighbors:data.total_neighbors,capped:mergedEdges.size >= 80}}
   } catch (error) { if (version === graphVersion && error.name !== 'AbortError') graphError.value = error.status === 409 ? 'Le classement a changé. Relancez cette exploration.' : error.message }
   finally { if (version === graphVersion) busy.value = false }
 }
-function applyPage(page, append = true) {
+function applyPage(page) {
   graphController?.abort(); ++graphVersion; busy.value = false; graphError.value = ''
   selected.value = {page_id:page.page_id,title:page.title}
-  if (!nodes.value.some(n => n.page_id === page.page_id)) nodes.value = [...nodes.value, {...page}]
-  if (append) { history.value = [...history.value, {...selected.value}]; historyIndex.value = history.value.length - 1 }
-  if (!progress.value[`${page.page_id}:${direction.value}`]) loadNeighbors(selected.value)
+  loadWindow()
+}
+async function loadWindow() {
+  // Reload only absent neighborhoods, current page first.
+  const current = currentVisitId.value
+  for (const visit of [...history.value.slice(-4)].reverse()) {
+    if (current !== currentVisitId.value || screen.value !== 'graph') return
+    if (!neighborhoods.value[`${visit.page_id}:${direction.value}`]) await loadNeighbors(visit)
+  }
+}
+function activateVisit(visit) {
+  if (blocked.value || pendingVisit.value) return
+  currentVisitId.value = visit.id
+  applyPage(visit)
+}
+function recordVisit(visit) {
+  const normalized = {...visit, title:visit.page_title ?? visit.title}
+  allVisits.value = [...allVisits.value, normalized]
+  currentVisitId.value = normalized.id
+  applyPage(normalized)
 }
 async function start(page) {
   if (blocked.value || pendingVisit.value) return
@@ -192,28 +232,35 @@ async function start(page) {
     }
     const valid = await api(`/api/graph/pages/${pageId}/`)
     let created = null
-    if (user.value) created = await api('/api/explorations/', {method:'POST',body:{page_id:valid.page_id}})
+    let root
+    if (user.value) {
+      created = await api('/api/explorations/', {method:'POST',body:{page_id:valid.page_id}})
+      const batch = await api(`/api/explorations/${created.id}/visits/`)
+      root = batch.results.find(v => v.position === 1)
+      if (!root) throw new Error('Visite initiale introuvable.')
+    } else root = {...valid,id:`local-${++localVisitId}`,parent_id:null}
     resetGraph(); explorationId.value = created?.id ?? null; visitPosition.value = created ? 1 : 0
-    screen.value = 'graph'; ++historyVersion; closeSearch(); query.value = ''; suggestions.value = []; applyPage(valid)
+    screen.value = 'graph'; ++historyVersion; closeSearch(); query.value = ''; suggestions.value = []; recordVisit(root)
   } catch (error) {
     saveError.value = `${error.message} Si la connexion a été interrompue, consultez l’historique avant de recommencer : le parcours a peut-être été créé.`
   } finally { saving.value = false }
 }
 async function selectPage(page) {
+  const ancestor = [...history.value].reverse().find(v => v.page_id === page.page_id)
+  if (ancestor) { activateVisit(ancestor); return }
   if (blocked.value || pendingVisit.value || selected.value?.page_id === page.page_id) return
-  if (!nodes.value.some(n => n.page_id === page.page_id) && nodes.value.length >= 400) { graphError.value = 'Limite de 400 pages atteinte.'; return }
   if (explorationId.value) {
-    pendingVisit.value = {page:{...page}, exploration:explorationId.value, position:visitPosition.value + 1}
+    pendingVisit.value = {page:{...page}, exploration:explorationId.value, position:visitPosition.value + 1, parent_id:currentVisitId.value}
     await retryVisit()
-  } else applyPage(page)
+  } else recordVisit({...page,id:`local-${++localVisitId}`,parent_id:currentVisitId.value})
 }
 async function retryVisit() {
   if (saving.value || !pendingVisit.value) return
   const pending = pendingVisit.value; saving.value = true; saveError.value = ''
   try {
-    const saved = await api(`/api/explorations/${pending.exploration}/visits/`, {method:'POST',body:{page_id:pending.page.page_id,position:pending.position}})
+    const saved = await api(`/api/explorations/${pending.exploration}/visits/`, {method:'POST',body:{page_id:pending.page.page_id,position:pending.position,parent_id:pending.parent_id}})
     visitPosition.value = saved.position; pendingVisit.value = null
-    applyPage({...pending.page,title:saved.page_title})
+    recordVisit(saved)
   } catch (error) { saveError.value = `${error.message} La navigation est suspendue pour préserver l’ordre des visites.` }
   finally { saving.value = false }
 }
@@ -222,8 +269,6 @@ function followArticle(data) {
   if (blocked.value || pendingVisit.value || !selected.value || data.source_id !== selected.value.page_id) return
   const page = data.node, edge = data.edge
   if (edge.source !== data.source_id || edge.target !== page.page_id || edge.type !== 'LINKS_TO') return
-  if (!nodes.value.some(n => n.page_id === page.page_id) && nodes.value.length >= 400) { graphError.value = 'Limite de 400 pages atteinte.'; return }
-  if (!edges.value.some(e => e.source === edge.source && e.target === edge.target && e.type === edge.type)) edges.value = [...edges.value,edge]
   selectPage(page)
 }
 async function showHistory() {
@@ -256,27 +301,26 @@ async function moreVisits() {
   catch(error) {if(version === historyVersion) historyError.value = error.message}
   finally {if(version === historyVersion) historyBusy.value = false}
 }
-async function resume(item) {
+async function resume(item, targetVisit = null) {
   if(blocked.value) return
   saving.value = true; historyError.value = ''
   try {
     const info = await api(`/api/explorations/${item.id}/`)
-    if (!info.last_visit) throw new Error('Ce parcours ne contient aucune visite.')
-    const page = await api(`/api/graph/pages/${info.last_visit.page_id}/`)
     const restored = []
     let next = `/api/explorations/${info.id}/visits/`
     while (next) {
-      const batch = await api(next)
-      restored.push(...batch.results.filter(v => v.position <= info.last_visit.position))
+      const batch = await api(next); restored.push(...batch.results)
       next = paginationPath(batch.next)
-      if (batch.results.some(v => v.position >= info.last_visit.position)) break
     }
-    // La reprise est une lecture, elle ne crée ni parcours ni visite.
-    resetGraph(); pendingVisit.value = null; saveError.value = ''; explorationId.value = info.id; visitPosition.value = info.last_visit.position
+    const target = restored.find(v => v.id === (targetVisit?.id ?? info.last_visit?.id))
+    if (!target) throw new Error('Visite introuvable.')
+    const page = await api(`/api/graph/pages/${target.page_id}/`)
+    resetGraph(); pendingVisit.value = null; saveError.value = ''; explorationId.value = info.id
+    visitPosition.value = restored.reduce((maximum,v) => Math.max(maximum,v.position),0)
+    allVisits.value = restored.map(v => ({...v,title:v.page_title}))
+    currentVisitId.value = target.id
     query.value = ''; screen.value = 'graph'; ++historyVersion
-    history.value = restored.map(v => ({page_id:v.page_id,title:v.page_title}))
-    historyIndex.value = history.value.length - 1
-    applyPage(page, false)
+    applyPage(page)
   } catch(error) {historyError.value = error.message}
   finally {saving.value = false}
 }
@@ -287,7 +331,7 @@ watch(() => history.value.length, async () => {
     list.scrollLeft = list.scrollWidth
   }
 })
-watch(direction, () => {graphController?.abort(); ++graphVersion; busy.value = false; graphError.value = ''; if(selected.value && !pageProgress.value) loadNeighbors()})
+watch(direction, () => {graphController?.abort(); ++graphVersion; busy.value = false; graphError.value = ''; if(selected.value) loadWindow()})
 watch([home, () => user.value?.id], loadRecentJourney)
 watch([screen, () => user.value?.id], () => { accountMenuOpen.value = false })
 onMounted(() => {
@@ -334,9 +378,9 @@ onBeforeUnmount(() => {document.removeEventListener('pointerdown', dismissAccoun
       <p v-if="historyError" class="app-notice" role="alert">{{ historyError }} <button @click="showHistory">Recharger</button></p>
       <div v-if="detail" class="journey-detail">
         <button @click="showHistory">← Tous les parcours</button><h2>{{ detail.start_page_title }}</h2><p class="muted">Commencé le {{ date(detail.created_at) }}</p>
-        <ol class="saved-visits"><li v-for="visit in visits" :key="visit.id"><span class="visit-number">{{ visit.position }}</span><span>{{ visit.page_title }}</span><time :datetime="visit.visited_at">{{ date(visit.visited_at) }}</time></li></ol>
+        <JourneyTree :visits="visits" :current-id="detail.last_visit?.id" :disabled="blocked" @select="resume(detail, $event)" />
         <button v-if="visitsNext" :disabled="historyBusy" @click="moreVisits">Afficher la suite du parcours</button>
-        <div class="resume-box"><p class="muted">La reprise conserve les étapes du parcours et recharge les voisins de la dernière page. La disposition précédente du graphe n’est pas restaurée.</p><p v-if="detail.last_visit">Reprendre depuis <strong>{{ detail.last_visit.page_title }}</strong></p><button :disabled="blocked || !detail.last_visit" @click="resume(detail)">Reprendre l’exploration →</button></div>
+        <div class="resume-box"><p class="muted">Cliquez sur une visite pour reprendre sa branche. Le graphe recharge au maximum quatre étapes et leurs voisins.</p><p v-if="detail.last_visit">Reprendre depuis <strong>{{ detail.last_visit.page_title }}</strong></p><button :disabled="blocked || !detail.last_visit" @click="resume(detail)">Reprendre l’exploration →</button></div>
       </div>
       <template v-else>
         <p class="muted">Chaque recherche sélectionnée démarre un nouveau parcours.</p>
@@ -349,7 +393,9 @@ onBeforeUnmount(() => {document.removeEventListener('pointerdown', dismissAccoun
 
     <div v-show="screen === 'graph'" class="workspace" :class="{'home-workspace': home}">
       <aside v-if="selected" class="journey" aria-label="Parcours actuel"><h2>Parcours</h2><p v-if="!history.length" class="muted">Votre exploration commence ici.</p><p v-if="selected" class="journey-save-state">{{ explorationId ? 'Parcours enregistré' : user ? 'Parcours local. Une nouvelle recherche sera enregistrée.' : 'Connectez-vous pour enregistrer vos prochains parcours.' }}</p>
-        <ol ref="journeyList"><li v-for="(page,index) in history" :key="index" :class="{active:index === historyIndex}"><button :disabled="blocked || !!pendingVisit" :aria-current="index === historyIndex ? 'step' : undefined" @click="selectPage(page)"><span class="history-dot"></span><span>{{ page.title }}</span></button></li></ol>
+        <ol ref="journeyList" class="mobile-journey-trail"><li v-for="(page,index) in history" :key="index" :class="{active:index === historyIndex}"><button :disabled="blocked || !!pendingVisit" :aria-current="index === historyIndex ? 'step' : undefined" @click="activateVisit(page)"><span class="history-dot"></span><span>{{ page.title }}</span></button></li></ol>
+        <div class="desktop-journey-tree"><JourneyTree :visits="allVisits" :current-id="currentVisitId" :disabled="blocked || !!pendingVisit" @select="activateVisit" /></div>
+        <button class="open-journey-tree" @click="journeyDialog.showModal()">Voir le parcours ({{ allVisits.length }})</button>
       </aside>
       <section class="explorer" aria-label="Exploration du graphe"><div class="graph-area">
         <GraphView ref="graph" :nodes="visibleGraph.nodes" :edges="visibleGraph.edges" :selected="selected?.page_id" @select="navigateGraph" />
@@ -380,12 +426,18 @@ onBeforeUnmount(() => {document.removeEventListener('pointerdown', dismissAccoun
           </section>
           <p v-else class="home-account-note">Vous pouvez explorer sans compte. <button :disabled="!sessionReady" @click="openAuth">Connectez-vous</button> pour retrouver vos parcours.</p>
         </section>
-        <div v-if="selected" class="graph-toolbar"><span class="neighbor-counter" role="status">{{ visibleGraph.navigable.size.toLocaleString('fr-FR') }} / {{ pageProgress?.total_neighbors == null ? '…' : pageProgress.total_neighbors.toLocaleString('fr-FR') }} voisins</span><button :disabled="busy || pageProgress?.has_more === false" @click="loadNeighbors()">{{ busy ? 'Chargement…' : pageProgress?.has_more === false ? 'Tous les voisins chargés' : pageProgress ? 'Charger 20 de plus' : 'Charger les voisins' }}</button><button @click="graph?.fit()">Recentrer</button></div>
+        <div v-if="selected" class="graph-toolbar"><span class="neighbor-counter" role="status">{{ visibleGraph.navigable.size.toLocaleString('fr-FR') }} / {{ pageProgress?.total_neighbors == null ? '…' : pageProgress.total_neighbors.toLocaleString('fr-FR') }} voisins</span><button :disabled="busy || pageProgress?.has_more === false || pageProgress?.capped" @click="loadNeighbors()">{{ busy ? 'Chargement…' : pageProgress?.capped ? 'Limite de 80 voisins chargés' : pageProgress?.has_more === false ? 'Tous les voisins chargés' : pageProgress ? 'Charger 20 de plus' : 'Charger les voisins' }}</button><button @click="graph?.fit()">Recentrer</button></div>
         <div v-if="graphError" class="graph-error" role="alert">{{ graphError }} <button @click="loadNeighbors()">Réessayer</button></div>
         <div v-if="selected" class="graph-caption"><span>{{ visibleGraph.nodes.length }} pages visibles · {{ visibleGraph.edges.length }} liens</span><span>Cliquez sur une page voisine pour continuer. · Glissez pour déplacer, faites défiler pour zoomer.</span></div>
       </div><div v-if="selected" class="reader-space" :style="{height:readerLayout.height+'px'}" aria-hidden="true"></div></section>
       <ArticlePanel v-if="selected" :page="selected" @follow="followArticle" @layout="readerLayout = $event" />
     </div>
+
+    <dialog ref="journeyDialog" class="journey-tree-dialog" aria-labelledby="journey-tree-title">
+      <header><h2 id="journey-tree-title">Votre parcours</h2><button type="button" aria-label="Fermer le parcours" @click="journeyDialog.close()">Fermer</button></header>
+      <p class="muted">Choisissez une visite pour revenir à cette étape.</p>
+      <JourneyTree :visits="allVisits" :current-id="currentVisitId" :disabled="blocked || !!pendingVisit" @select="chooseTreeVisit" />
+    </dialog>
 
     <dialog ref="authDialog" class="account-dialog" aria-labelledby="auth-title" @cancel.prevent="closeAuth">
       <div class="account-dialog-heading"><h2 id="auth-title">{{ authMode === 'login' ? 'Se connecter' : 'Créer un compte' }}</h2><button :disabled="authBusy" aria-label="Fermer" @click="closeAuth">×</button></div>
@@ -399,3 +451,17 @@ onBeforeUnmount(() => {document.removeEventListener('pointerdown', dismissAccoun
     </dialog>
   </main>
 </template>
+
+
+<style scoped>
+.journey .mobile-journey-trail,.journey .open-journey-tree{display:none}
+.journey-tree-dialog{width:min(540px,calc(100vw - 24px));max-height:85dvh;overflow:auto;padding:20px;border:1px solid #202122;color:#202122;background:#fff}
+.journey-tree-dialog::backdrop{background:#0006}
+.journey-tree-dialog header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.journey-tree-dialog h2{font:normal 24px Georgia,'Times New Roman',serif;margin:0}
+@media(max-width:650px){
+ .journey .desktop-journey-tree{display:none}
+ .journey .mobile-journey-trail{display:flex}
+ .journey .open-journey-tree{display:block;position:static;width:auto;padding:7px 10px;margin:8px 0;border:1px solid #a2a9b1;font:12px Arial,Helvetica,sans-serif;background:#fff}
+}
+</style>
