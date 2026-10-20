@@ -1,0 +1,34 @@
+/* Home spacing: 8, 16, 24, 32, 48, 64, 80 px. */
+.app-shell.is-home .home-content{max-width:1024px;padding:80px 32px 64px;margin:0 auto}
+.app-shell.is-home .home-content h1{font-family:var(--wiki-font-heading);font-weight:400;font-size:40px;line-height:1.2;margin:0 0 32px;letter-spacing:0}
+.app-shell.is-home .home-search{margin:0;max-width:none;width:100%}
+.app-shell.is-home .home-search label.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0)}
+.app-shell.is-home .home-search .search-field{height:64px;border:1px solid #72777d;background:#fff;padding:0 24px;gap:16px}
+.app-shell.is-home .home-search .home-search-icon{flex:none;fill:none;stroke:currentColor;stroke-width:1.7;color:#54595d}
+.app-shell.is-home .home-search input{height:100%;font-size:18px;padding:0;min-width:0}
+.app-shell.is-home .home-search .suggestions{top:calc(100% + 8px);max-height:min(48dvh,384px)}
+.app-shell.is-home .home-resume{display:block;border:0;margin:48px 0 0;padding:0}
+.app-shell.is-home .home-content h2{font-family:var(--wiki-font-body);font-weight:600;font-size:16px;line-height:24px;letter-spacing:0;margin:0 0 16px}
+.app-shell.is-home .home-resume-card{display:flex;align-items:center;justify-content:space-between;gap:24px;width:100%;padding:24px;text-align:left;border:1px solid #a2a9b1;background:#f8f9fa}
+.app-shell.is-home .home-resume-card:hover{background:#eaecf0;border-color:#72777d}
+.app-shell.is-home .home-resume-text{display:flex;flex-direction:column;gap:8px;min-width:0}
+.app-shell.is-home .home-resume-text strong{font:400 24px/32px var(--wiki-font-heading);overflow-wrap:anywhere}
+.app-shell.is-home .home-resume-text>span{font-size:14px;line-height:24px;color:#54595d;overflow-wrap:anywhere}
+.app-shell.is-home .home-resume-text time{font-size:12px;line-height:16px;color:#72777d}
+.app-shell.is-home .home-resume-action{display:flex;gap:16px;align-items:center;flex-shrink:0;font-size:14px;line-height:24px}
+.app-shell.is-home .starting-points{margin:48px 0 0}
+.app-shell.is-home .starting-points h2{color:#54595d;font-weight:400}
+.app-shell.is-home .starter-links{display:flex;flex-wrap:wrap;gap:8px}
+.app-shell.is-home .starter-links button{display:flex;align-items:center;gap:16px;min-height:48px;padding:8px 16px;border:1px solid #c8ccd1;background:#fff;font-size:14px;line-height:24px;border-radius:24px}
+.app-shell.is-home .starter-links button:hover{background:#f8f9fa;border-color:#72777d}
+.app-shell.is-home .home-resume-error{margin:16px 0;font-size:14px}
+@media(max-width:650px){
+ .app-shell.is-home .home-content{padding:40px 16px 32px}
+ .app-shell.is-home .home-content h1{font-size:32px;line-height:40px;margin-bottom:24px}
+ .app-shell.is-home .home-search .search-field{height:56px;padding:0 16px;gap:8px}
+ .app-shell.is-home .home-search input{font-size:16px}
+ .app-shell.is-home .home-resume,.app-shell.is-home .starting-points{margin-top:32px}
+ .app-shell.is-home .home-resume-card{padding:16px;gap:16px;flex-wrap:wrap}
+ .app-shell.is-home .home-resume-text strong{font-size:24px}
+ .app-shell.is-home .home-resume-action{margin-left:auto}
+}

@@ -1,7 +1,7 @@
 <script setup>
 import { nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
-const props = defineProps({ page: Object })
-const emit = defineEmits(['follow', 'layout'])
+const props = defineProps({ page: Object, fullscreen: Boolean })
+const emit = defineEmits(['follow', 'layout', 'fullscreen'])
 const open = ref(false), mode = ref('article'), height = ref(45), panel = ref(null), body = ref(null)
 const html = ref(''), raw = ref(''), meta = ref(null), busy = ref(false), error = ref(''), notice = ref('')
 const cache = new Map()
@@ -87,15 +87,30 @@ function articleClick(event) {
 function articleKey(event) { if (event.key === 'Enter' && event.target.closest('[data-wiki-title]')) articleClick(event) }
 function resize(value) { height.value = Math.max(25,Math.min(85,value)) }
 function startResize(event) {
-  if (!open.value) return
+  if (!open.value || props.fullscreen) return
   event.preventDefault()
   event.currentTarget.setPointerCapture(event.pointerId)
   drag = { y:event.clientY, height:height.value, available:panel.value.closest('.workspace').clientHeight }
 }
 function moveResize(event) { if (drag) resize(drag.height + (drag.y-event.clientY)/drag.available*100) }
 function stopResize() { drag = null }
+function toggleFullscreen() {
+  drag = null
+  if (props.fullscreen) {
+    open.value = false
+    emit('fullscreen', false)
+  } else {
+    open.value = true
+    emit('fullscreen', true)
+  }
+}
+function togglePanel() {
+  if (props.fullscreen) emit('fullscreen', false)
+  else open.value = !open.value
+}
 function retryArticle() { notice.value = ''; if (mode.value !== 'article') mode.value = 'article'; else load() }
 function reportLayout() { emit('layout', { open: open.value, height: panel.value.getBoundingClientRect().height }) }
+watch(() => props.fullscreen, value => { if (value) open.value = true })
 onMounted(() => { panelObserver = new ResizeObserver(reportLayout); panelObserver.observe(panel.value) })
 watch(open, async () => { await nextTick(); reportLayout() })
 watch([open,mode,() => props.page?.page_id], load)
@@ -104,9 +119,18 @@ watch([open, mode, () => props.page?.page_id], cancelFollow, { flush: 'sync' })
 onBeforeUnmount(() => { panelObserver?.disconnect(); controller?.abort(); ++version; cancelFollow() })
 </script>
 <template>
-  <section ref="panel" class="article-panel reader-panel" :class="{expanded:open}" :style="open ? {height:height+'%'} : {}">
-    <div v-if="open" class="panel-resizer" role="separator" aria-label="Hauteur du panneau de lecture" aria-orientation="horizontal" tabindex="0" :aria-valuenow="Math.round(height)" :aria-valuemin="25" :aria-valuemax="85" @pointerdown="startResize" @pointermove="moveResize" @pointerup="stopResize" @pointercancel="stopResize" @lostpointercapture="stopResize" @keydown.up.prevent="resize(height+5)" @keydown.down.prevent="resize(height-5)" @keydown.home.prevent="resize(25)" @keydown.end.prevent="resize(85)"><span></span></div>
-    <div class="reader-heading"><button class="article-toggle" :aria-expanded="open" aria-controls="reader-content" @click="open=!open"><span class="toggle-arrow" aria-hidden="true">{{open?'↓':'↑'}}</span><span class="reader-title">{{page.title}}</span><span class="read-label">{{open?'Réduire':'Lire l’article'}}</span></button></div>
+  <section ref="panel" class="article-panel reader-panel" :class="{expanded:open, 'reading-fullscreen':fullscreen}" :style="open && !fullscreen ? {height:height+'%'} : {}">
+    <div v-if="open" class="reader-resize-bar">
+    <div v-if="!fullscreen" class="panel-resizer" role="separator" aria-label="Hauteur du panneau de lecture" aria-orientation="horizontal" tabindex="0" :aria-valuenow="Math.round(height)" :aria-valuemin="25" :aria-valuemax="85" @pointerdown="startResize" @pointermove="moveResize" @pointerup="stopResize" @pointercancel="stopResize" @lostpointercapture="stopResize" @keydown.up.prevent="resize(height+5)" @keydown.down.prevent="resize(height-5)" @keydown.home.prevent="resize(25)" @keydown.end.prevent="resize(85)"><span></span></div>
+      <button type="button" class="reader-fullscreen-toggle" :aria-label="fullscreen ? 'Fermer l’article et revenir au graphe' : 'Agrandir la lecture'" :title="fullscreen ? 'Fermer l’article et revenir au graphe' : 'Agrandir la lecture'" :aria-pressed="fullscreen" @click="toggleFullscreen">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path v-if="!fullscreen" d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6"/>
+          <path v-else d="M3 9h6V3m6 0v6h6M9 21v-6H3m18 0h-6v6"/>
+        </svg>
+        <span v-if="fullscreen">Fermer l’article</span>
+      </button>
+    </div>
+    <div class="reader-heading"><button class="article-toggle" :aria-label="fullscreen ? 'Revenir à la vue partagée : ' + page.title : undefined" :aria-expanded="open" aria-controls="reader-content" @click="togglePanel"><span class="toggle-arrow" aria-hidden="true">{{open?'↓':'↑'}}</span><span class="reader-title">{{page.title}}</span><span v-if="!fullscreen" class="read-label">{{open?'Réduire':'Lire l’article'}}</span></button></div>
     <template v-if="open">
       <div class="reader-tools"><div aria-label="Format de lecture"><button :aria-pressed="mode==='article'" @click="mode='article'">Article</button><button :aria-pressed="mode==='wikicode'" @click="mode='wikicode'">Wikicode</button></div></div>
       <p v-if="following || followError" class="reader-follow-status" :role="followError ? 'alert' : 'status'">{{followError || `Vérification du lien vers « ${following} »…`}}</p>
@@ -120,3 +144,13 @@ onBeforeUnmount(() => { panelObserver?.disconnect(); controller?.abort(); ++vers
     </template>
   </section>
 </template>
+
+
+<style scoped>
+.reader-resize-bar{display:flex;align-items:center;min-height:32px;flex-shrink:0;background:#fafafa;border-bottom:1px solid #eaecf0}
+.reader-resize-bar .panel-resizer{flex:1;height:32px}
+.reader-fullscreen-toggle{display:flex;align-items:center;justify-content:center;gap:8px;min-width:40px;min-height:32px;padding:4px 8px;border:0;background:transparent;font-size:12px;margin-left:auto}
+.reader-fullscreen-toggle:hover{background:#eaecf0}
+.reading-fullscreen{display:flex;flex-direction:column;overflow:hidden}
+.reading-fullscreen .reader-body{min-height:0;flex:1;overflow:auto}
+</style>

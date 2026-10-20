@@ -7,6 +7,19 @@ import { ancestorPath, branchGraph } from './lib/branchGraph.js'
 import { api, paginationPath } from './lib/api.js'
 
 const journeyList = ref(null)
+const journeyCollapsed = ref(false)
+const readingMode = ref(false)
+let previousJourneyCollapsed = false
+function setReadingMode(value) {
+  if (value === readingMode.value) return
+  if (value) {
+    previousJourneyCollapsed = journeyCollapsed.value
+    journeyCollapsed.value = false
+    graphController?.abort(); ++graphVersion; busy.value = false
+  } else journeyCollapsed.value = previousJourneyCollapsed
+  readingMode.value = value
+  if (!value && selected.value) nextTick(loadWindow)
+}
 const accountMenu = ref(null), accountToggle = ref(null), accountMenuOpen = ref(false)
 function dismissAccountMenu(event) {
   if (!accountMenu.value?.contains(event.target)) accountMenuOpen.value = false
@@ -35,7 +48,6 @@ function escapeSearch() {
   headerInput.value?.blur()
 }
 
-const starterTrack = ref(null)
 const home = computed(() => screen.value === 'graph' && !selected.value)
 const recentJourney = ref(null), recentBusy = ref(false), recentError = ref('')
 let recentVersion = 0
@@ -45,10 +57,6 @@ const starters = [
   {page_id:3,title:'Antoine Meillet',description:'Langues et linguistique'},
   {title:'Python (langage)',description:'Programmation et informatique'},
 ]
-function slideStarters(direction) {
-  const track = starterTrack.value
-  if (track) track.scrollBy({left:direction * track.clientWidth * .85, behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'})
-}
 async function loadRecentJourney() {
   const version = ++recentVersion
   recentJourney.value = null; recentError.value = ''; recentBusy.value = false
@@ -148,6 +156,7 @@ function goHome() {
   resetGraph()
 }
 function resetGraph() {
+  setReadingMode(false)
   graphController?.abort(); ++graphVersion; busy.value = false; graphError.value = ''
   selected.value = null; progress.value = {}; allVisits.value = []; currentVisitId.value = null; neighborhoods.value = {}
   readerLayout.value = {open:false,height:0}
@@ -178,7 +187,7 @@ function cacheNeighborhood(key, entry) {
   neighborhoods.value = cache
 }
 async function loadNeighbors(page = selected.value, dir = direction.value) {
-  if (!page) return
+  if (!page || readingMode.value) return
   const key = `${page.page_id}:${dir}`, previous = progress.value[key]
   if (previous && (!previous.has_more || previous.capped)) return
   graphController?.abort(); graphController = new AbortController(); const version = ++graphVersion
@@ -204,7 +213,7 @@ async function loadWindow() {
   // Reload only absent neighborhoods, current page first.
   const current = currentVisitId.value
   for (const visit of [...history.value.slice(-4)].reverse()) {
-    if (current !== currentVisitId.value || screen.value !== 'graph') return
+    if (readingMode.value || current !== currentVisitId.value || screen.value !== 'graph') return
     if (!neighborhoods.value[`${visit.page_id}:${direction.value}`]) await loadNeighbors(visit)
   }
 }
@@ -391,49 +400,49 @@ onBeforeUnmount(() => {document.removeEventListener('pointerdown', dismissAccoun
       <p v-if="historyBusy" role="status">Chargement…</p>
     </section>
 
-    <div v-show="screen === 'graph'" class="workspace" :class="{'home-workspace': home}">
-      <aside v-if="selected" class="journey" aria-label="Parcours actuel"><h2>Parcours</h2><p v-if="!history.length" class="muted">Votre exploration commence ici.</p><p v-if="selected" class="journey-save-state">{{ explorationId ? 'Parcours enregistré' : user ? 'Parcours local. Une nouvelle recherche sera enregistrée.' : 'Connectez-vous pour enregistrer vos prochains parcours.' }}</p>
+    <div v-show="screen === 'graph'" class="workspace" :style="{'--reader-height': selected && !readingMode ? readerLayout.height + 'px' : '0px'}" :class="{'home-workspace': home, 'reading-mode':readingMode}">
+      <aside v-if="selected" class="journey" :class="{'is-collapsed':journeyCollapsed}" aria-label="Parcours actuel"><h2><button class="journey-toggle" type="button" :aria-expanded="!journeyCollapsed" aria-controls="desktop-journey" :aria-label="journeyCollapsed ? 'Déplier le parcours' : 'Replier le parcours'" @click="journeyCollapsed = !journeyCollapsed"><span>Parcours</span><span aria-hidden="true">{{ journeyCollapsed ? '›' : '‹' }}</span></button></h2><p v-if="!history.length" class="muted">Votre exploration commence ici.</p>
         <ol ref="journeyList" class="mobile-journey-trail"><li v-for="(page,index) in history" :key="index" :class="{active:index === historyIndex}"><button :disabled="blocked || !!pendingVisit" :aria-current="index === historyIndex ? 'step' : undefined" @click="activateVisit(page)"><span class="history-dot"></span><span>{{ page.title }}</span></button></li></ol>
-        <div class="desktop-journey-tree"><JourneyTree :visits="allVisits" :current-id="currentVisitId" :disabled="blocked || !!pendingVisit" @select="activateVisit" /></div>
+        <div id="desktop-journey" class="desktop-journey-tree" data-journey-scroll tabindex="0" aria-label="Défilement du parcours"><JourneyTree :compact="journeyCollapsed" :visits="allVisits" :current-id="currentVisitId" :disabled="blocked || !!pendingVisit" @select="activateVisit" /></div>
         <button class="open-journey-tree" @click="journeyDialog.showModal()">Voir le parcours ({{ allVisits.length }})</button>
       </aside>
-      <section class="explorer" aria-label="Exploration du graphe"><div class="graph-area">
-        <GraphView ref="graph" :nodes="visibleGraph.nodes" :edges="visibleGraph.edges" :selected="selected?.page_id" @select="navigateGraph" />
+      <section v-if="!readingMode" class="explorer" aria-label="Exploration du graphe"><div class="graph-area">
+        <GraphView v-if="screen === 'graph' && selected" ref="graph" :layout-key="journeyCollapsed" :nodes="visibleGraph.nodes" :edges="visibleGraph.edges" :selected="selected?.page_id" @select="navigateGraph" />
         <section v-if="!selected" class="home-content" aria-labelledby="home-title">
-          <h1 id="home-title">Explorer Wikipédia par ses liens</h1>
-          <p class="home-intro">Choisissez un article, puis suivez les liens vers les pages qui vous intéressent.</p>
+          <h1 id="home-title">Explorez Wikipédia, de lien en lien.</h1>
           <div ref="homeSearch" class="search home-search" @focusin="openSearch('home')" @keydown.esc.prevent="closeSearch">
-            <label for="home-search">Quel article souhaitez-vous explorer ?</label>
-            <div class="search-field"><input id="home-search" @click="openSearch('home')" v-model="query" type="search" autocomplete="off" placeholder="Un lieu, une personne, une idée…" aria-describedby="search-help" /></div>
-            <p id="search-help" class="search-help">Saisissez au moins trois caractères, puis choisissez un article.</p>
+            <label class="sr-only" for="home-search">Rechercher un article Wikipédia</label>
+            <div class="search-field"><svg class="home-search-icon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><circle cx="10" cy="10" r="7" /><path d="m15 15 6 6" /></svg><input id="home-search" @click="openSearch('home')" v-model="query" type="search" autocomplete="off" placeholder="Rechercher un article Wikipédia…" /></div>
             <div v-if="activeSearch === 'home' && query.trim().length >= 3" class="suggestions">
               <p v-if="searching" role="status">Recherche…</p><p v-else-if="searchError" role="alert">{{ searchError }}</p>
               <template v-else><button v-for="item in suggestions" :key="item.page_id" :disabled="blocked || !!pendingVisit" @click="start(item)">{{ item.title }} <span aria-hidden="true">→</span></button><p v-if="!suggestions.length">Aucune page trouvée.</p></template>
             </div>
           </div>
+          <section v-if="user && (recentBusy || recentJourney || recentError)" class="home-resume" aria-labelledby="resume-title">
+            <h2 id="resume-title">Reprendre votre exploration</h2>
+            <p v-if="recentBusy" class="muted" role="status">Chargement du dernier parcours…</p>
+            <button v-else-if="recentJourney" class="home-resume-card" :disabled="blocked" @click="resume(recentJourney)">
+              <span class="home-resume-text"><strong>{{ recentJourney.last_visit.page_title }}</strong><span>Depuis {{ recentJourney.start_page_title }}</span><time :datetime="recentJourney.updated_at">{{ date(recentJourney.updated_at) }}</time></span>
+              <span class="home-resume-action">Reprendre <span aria-hidden="true">→</span></span>
+            </button>
+            <p v-else-if="recentError" role="alert">{{ recentError }} <button @click="loadRecentJourney">Réessayer</button></p>
+          </section>
+          <p v-if="historyError" class="home-resume-error" role="alert">{{ historyError }}</p>
           <section class="starting-points" aria-labelledby="starters-title">
-            <div class="starters-heading"><h2 id="starters-title">Quelques points de départ</h2><div class="carousel-controls"><button aria-label="Points de départ précédents" aria-controls="starter-track" @click="slideStarters(-1)">←</button><button aria-label="Points de départ suivants" aria-controls="starter-track" @click="slideStarters(1)">→</button></div></div>
-            <div id="starter-track" ref="starterTrack" class="starter-track" tabindex="0" aria-label="Points de départ, liste défilante">
-              <button v-for="item in starters" :key="item.title" class="starter-card" :disabled="blocked || !!pendingVisit" @click="start(item)"><span class="starter-title">{{ item.title }}</span><span class="starter-description">{{ item.description }}</span><span class="starter-action">Explorer cet article <span aria-hidden="true">→</span></span></button>
+            <h2 id="starters-title">Ou laissez-vous guider</h2>
+            <div class="starter-links">
+              <button v-for="item in starters" :key="item.title" :disabled="blocked || !!pendingVisit" @click="start(item)">{{ item.title }} <span aria-hidden="true">↗</span></button>
             </div>
           </section>
-          <section v-if="user" class="home-resume" aria-label="Reprendre une exploration">
-            <p v-if="recentBusy" class="muted" role="status">Recherche du dernier parcours…</p>
-            <template v-else-if="recentJourney"><div><h2>Reprendre mon dernier parcours</h2><p>{{ recentJourney.last_visit.page_title }}</p><time :datetime="recentJourney.updated_at">Dernière visite : {{ date(recentJourney.updated_at) }}</time></div><button :disabled="blocked" @click="resume(recentJourney)">Reprendre →</button></template>
-            <p v-else-if="recentError" role="alert">{{ recentError }} <button @click="loadRecentJourney">Réessayer</button></p>
-            <p v-else class="muted">Vos prochains parcours seront enregistrés dans votre historique.</p>
-            <p v-if="historyError" role="alert">{{ historyError }}</p>
-          </section>
-          <p v-else class="home-account-note">Vous pouvez explorer sans compte. <button :disabled="!sessionReady" @click="openAuth">Connectez-vous</button> pour retrouver vos parcours.</p>
         </section>
         <div v-if="selected" class="graph-toolbar"><span class="neighbor-counter" role="status">{{ visibleGraph.navigable.size.toLocaleString('fr-FR') }} / {{ pageProgress?.total_neighbors == null ? '…' : pageProgress.total_neighbors.toLocaleString('fr-FR') }} voisins</span><button :disabled="busy || pageProgress?.has_more === false || pageProgress?.capped" @click="loadNeighbors()">{{ busy ? 'Chargement…' : pageProgress?.capped ? 'Limite de 80 voisins chargés' : pageProgress?.has_more === false ? 'Tous les voisins chargés' : pageProgress ? 'Charger 20 de plus' : 'Charger les voisins' }}</button><button @click="graph?.fit()">Recentrer</button></div>
         <div v-if="graphError" class="graph-error" role="alert">{{ graphError }} <button @click="loadNeighbors()">Réessayer</button></div>
         <div v-if="selected" class="graph-caption"><span>{{ visibleGraph.nodes.length }} pages visibles · {{ visibleGraph.edges.length }} liens</span><span>Cliquez sur une page voisine pour continuer. · Glissez pour déplacer, faites défiler pour zoomer.</span></div>
       </div><div v-if="selected" class="reader-space" :style="{height:readerLayout.height+'px'}" aria-hidden="true"></div></section>
-      <ArticlePanel v-if="selected" :page="selected" @follow="followArticle" @layout="readerLayout = $event" />
+      <ArticlePanel v-if="selected" :page="selected" :fullscreen="readingMode" @fullscreen="setReadingMode" @follow="followArticle" @layout="readerLayout = $event" />
     </div>
 
-    <dialog ref="journeyDialog" class="journey-tree-dialog" aria-labelledby="journey-tree-title">
+    <dialog ref="journeyDialog" class="journey-tree-dialog" data-journey-scroll aria-labelledby="journey-tree-title">
       <header><h2 id="journey-tree-title">Votre parcours</h2><button type="button" aria-label="Fermer le parcours" @click="journeyDialog.close()">Fermer</button></header>
       <p class="muted">Choisissez une visite pour revenir à cette étape.</p>
       <JourneyTree :visits="allVisits" :current-id="currentVisitId" :disabled="blocked || !!pendingVisit" @select="chooseTreeVisit" />
@@ -454,14 +463,47 @@ onBeforeUnmount(() => {document.removeEventListener('pointerdown', dismissAccoun
 
 
 <style scoped>
+.workspace.reading-mode{overflow:hidden;padding-bottom:16px}
+.workspace.reading-mode>.reader-panel{position:relative;inset:auto;flex:1;min-width:0;min-height:0;height:100%;max-height:100%;border:1px solid #a2a9b1;box-shadow:none;z-index:auto}
+.workspace.reading-mode>.journey{margin-bottom:0}
+@media(max-width:650px){
+ .workspace.reading-mode>.reader-panel{height:0;flex:1;min-height:0}
+}
+
+.workspace{min-width:0}
+.journey{min-width:0}
+.desktop-journey-tree{min-width:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:8px 0}
+.desktop-journey-tree,.journey-tree-dialog{scrollbar-width:thin;scrollbar-color:#c8ccd1 transparent}
+.desktop-journey-tree:hover,.desktop-journey-tree:focus-within,.journey-tree-dialog:hover{scrollbar-color:#72777d transparent}
+.desktop-journey-tree::-webkit-scrollbar,.journey-tree-dialog::-webkit-scrollbar{width:6px}
+.desktop-journey-tree::-webkit-scrollbar-thumb,.journey-tree-dialog::-webkit-scrollbar-thumb{background:#c8ccd1;border-radius:8px}
+.journey-tree-dialog{overflow-x:hidden}
+@media(min-width:651px){
+ .workspace>.journey{position:relative;flex:0 0 320px;width:320px;max-width:36%;display:flex;flex-direction:column;overflow:hidden;margin:0 0 calc(var(--reader-height,0px) + 16px);padding:0 8px 0 0;min-height:0;background:#fff}
+ .workspace>.explorer{flex:1;min-width:0}
+ .workspace>.journey.is-collapsed{flex-basis:96px;width:96px}
+ .journey .journey-toggle{position:static;display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:8px 0;border:0;background:white;font:inherit;color:inherit;text-align:left}
+ .journey.is-collapsed .journey-toggle{font-size:14px}
+ .journey .journey-toggle:hover{color:#54595d}
+ .journey .journey-toggle>span:last-child{font:24px/1 Arial,sans-serif}
+
+ .journey>h2{flex-shrink:0;margin:8px 0 16px}
+ .journey>.desktop-journey-tree{flex:1;min-height:0}
+ .desktop-journey-tree:focus-visible{outline-offset:-2px}
+}
+
 .journey .mobile-journey-trail,.journey .open-journey-tree{display:none}
 .journey-tree-dialog{width:min(540px,calc(100vw - 24px));max-height:85dvh;overflow:auto;padding:20px;border:1px solid #202122;color:#202122;background:#fff}
 .journey-tree-dialog::backdrop{background:#0006}
 .journey-tree-dialog header{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .journey-tree-dialog h2{font:normal 24px Georgia,'Times New Roman',serif;margin:0}
+
 @media(max-width:650px){
  .journey .desktop-journey-tree{display:none}
  .journey .mobile-journey-trail{display:flex}
  .journey .open-journey-tree{display:block;position:static;width:auto;padding:7px 10px;margin:8px 0;border:1px solid #a2a9b1;font:12px Arial,Helvetica,sans-serif;background:#fff}
 }
 </style>
+
+
+<style src="./home.css"></style>

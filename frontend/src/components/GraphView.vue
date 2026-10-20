@@ -1,7 +1,7 @@
 <script setup>
-import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { onMounted, onBeforeUnmount, ref, watch, nextTick } from 'vue'
 import * as d3 from 'd3'
-const props = defineProps({ nodes: Array, edges: Array, selected: Number })
+const props = defineProps({ nodes: Array, edges: Array, selected: Number, layoutKey: Boolean })
 const emit = defineEmits(['select'])
 const host = ref(null)
 let svg, layer, nodeLayer, edgeLayer, simulation, zoom, observer
@@ -112,7 +112,19 @@ onMounted(() => {
 })
 watch(() => [props.nodes,props.edges,props.selected], update)
 watch(() => props.selected, paintSelection)
+// The sidebar changes the actual viewport. Explicitly restore focus even
+// when the user previously panned; preserve their current zoom level.
+watch(() => props.layoutKey, async () => {
+  await nextTick()
+  if (!host.value || !svg) return
+  const w = host.value.clientWidth, h = host.value.clientHeight
+  svg.attr('width', w).attr('height', h)
+  lastWidth = w; lastHeight = h
+  followFocus = true
+  centerOnCurrent(false)
+}, {flush:'post'})
 onBeforeUnmount(() => { observer?.disconnect(); simulation?.stop(); svg?.on('.zoom',null) })
 defineExpose({ fit })
 </script>
 <template><div ref="host" class="graph-canvas"></div></template>
+

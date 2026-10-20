@@ -24,3 +24,11 @@ test('partial pages and cyclic data do not hide visits or loop',()=>{
  assert.equal(journeyTree([{id:4,parent_id:3}]).rows.length,1)
  assert.equal(journeyTree([{id:1,parent_id:2},{id:2,parent_id:1}]).rows.length,2)
 })
+test('wrapped titles move subsequent nodes and keep links attached',()=>{
+ const tree=journeyTree(chain,new Map([[1,92],[2,72]]))
+ assert.equal(tree.rows[0].y,26)
+ assert.equal(tree.rows[1].y,118)
+ assert.equal(tree.rows[2].y,190)
+ assert.equal(tree.height,92+72+4*52)
+ assert.equal(tree.links[0].d,'M 14 26 V 118')
+})
